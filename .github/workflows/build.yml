@@ -1,0 +1,58 @@
+# `make ci` is the whole gate for this repo, so the runner runs the same steps:
+# the bundle resolves against the distro's stock stack, carries no path from the
+# machine that built it, and packages.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The jobs only read the repository.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same list as `make deps`, plus dpkg-dev for dpkg-shlibdeps and
+      # binutils for the strip in the gtk target, less shellcheck, which the
+      # runner image already has for `make lint`.
+      - name: C libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build gperf sassc dpkg-dev binutils \
+            libglib2.0-dev libpango1.0-dev libcairo2-dev libgdk-pixbuf-2.0-dev \
+            libgraphene-1.0-dev libepoxy-dev libxkbcommon-dev libwayland-dev \
+            libx11-dev libxi-dev libxcursor-dev libxdamage-dev libxinerama-dev \
+            libxrandr-dev libxext-dev libxfixes-dev libcairo-script-interpreter2 \
+            libjpeg-dev libtiff-dev libharfbuzz-dev libfribidi-dev libdrm-dev
+
+      # `make gtk` fetches and builds GTK; the staged result only changes when
+      # VERSION does, so it is cached against that, and a cache hit skips the
+      # GTK build.
+      - name: GTK version
+        id: gtk
+        run: echo "v=$(sed -n 's/^VERSION *= *//p' Makefile)" >> "$GITHUB_OUTPUT"
+
+      - name: cache the bundle
+        id: gtk-cache
+        uses: actions/cache@v4
+        with:
+          path: build/gtk/stage
+          key: gtk-${{ steps.gtk.outputs.v }}-${{ hashFiles('patches/*.patch') }}-${{ runner.os }}
+
+      - name: build GTK
+        if: steps.gtk-cache.outputs.cache-hit != 'true'
+        run: make gtk
+
+      # check runs both assertions; deb re-runs check-no-buildpaths against the
+      # staged package, so building is not a way around them.
+      - name: ci
+        run: make ci

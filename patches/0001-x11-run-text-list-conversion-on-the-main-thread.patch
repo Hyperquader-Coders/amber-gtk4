@@ -1,0 +1,137 @@
+--- a/gdk/x11/gdktextlistconverter-x11.c
++++ b/gdk/x11/gdktextlistconverter-x11.c
+@@ -263,6 +263,75 @@
+   return FALSE;
+ }
+ 
++/* Both directions reach into GdkDisplay and Xlib, and neither is safe off the main
++ * thread. GConverterInputStream and GConverterOutputStream implement no async read or
++ * write, so GIO falls back to running the synchronous one on a GTask worker whenever the
++ * stream underneath cannot be polled -- exactly the case here, because
++ * GdkX11SelectionInputStream is driven by X events and is not a GPollableInputStream. The
++ * conversion therefore lands on a worker thread every time a selection arrives as
++ * COMPOUND_TEXT or STRING rather than UTF8_STRING.
++ *
++ * So the work is hopped onto the main context and waited for. Everything below the hop
++ * keeps GDK's usual single-thread guarantee.
++ */
++typedef struct
++{
++  GdkX11TextListConverter *conv;
++  const void      *inbuf;
++  gsize            inbuf_size;
++  void            *outbuf;
++  gsize            outbuf_size;
++  GConverterFlags  flags;
++  gsize           *bytes_read;
++  gsize           *bytes_written;
++  GError         **error;
++
++  GConverterResult result;
++  GMutex           lock;
++  GCond            cond;
++  gboolean         done;
++} ConvertCall;
++
++static GConverterResult
++gdk_x11_text_list_converter_convert_now (ConvertCall *c)
++{
++  if (c->conv->encoder)
++    return gdk_x11_text_list_converter_encode (c->conv,
++                                               c->inbuf, c->inbuf_size,
++                                               c->outbuf, c->outbuf_size,
++                                               c->flags,
++                                               c->bytes_read, c->bytes_written,
++                                               c->error);
++  else
++    return gdk_x11_text_list_converter_decode (c->conv,
++                                               c->inbuf, c->inbuf_size,
++                                               c->outbuf, c->outbuf_size,
++                                               c->flags,
++                                               c->bytes_read, c->bytes_written,
++                                               c->error);
++}
++
++static gboolean
++gdk_x11_text_list_converter_convert_on_main (gpointer data)
++{
++  ConvertCall *c = data;
++
++  c->result = gdk_x11_text_list_converter_convert_now (c);
++
++  g_mutex_lock (&c->lock);
++  c->done = TRUE;
++  g_cond_signal (&c->cond);
++  g_mutex_unlock (&c->lock);
++
++  return G_SOURCE_REMOVE;
++}
++
++/* Long enough that a busy main loop is never mistaken for a stopped one. It bounds the
++ * silence, not the wait: the queued source still points at this frame's stack, so there is
++ * nothing safe to return until it has run.
++ */
++#define GDK_X11_TEXT_LIST_CONVERT_WARN_US (10 * G_USEC_PER_SEC)
++
+ static GConverterResult
+ gdk_x11_text_list_converter_convert (GConverter       *converter,
+                                      const void       *inbuf,
+@@ -275,25 +344,42 @@
+                                      GError          **error)
+ {
+   GdkX11TextListConverter *conv = GDK_X11_TEXT_LIST_CONVERTER (converter);
++  GMainContext *main_context = g_main_context_default ();
++  ConvertCall c = { conv, inbuf, inbuf_size, outbuf, outbuf_size, flags,
++                    bytes_read, bytes_written, error,
++                    G_CONVERTER_ERROR, { 0 }, { 0 }, FALSE };
++  gint64 deadline;
+ 
+-  if (conv->encoder)
+-    {
+-      return gdk_x11_text_list_converter_encode (conv,
+-                                                 inbuf, inbuf_size,
+-                                                 outbuf, outbuf_size,
+-                                                 flags,
+-                                                 bytes_read, bytes_written,
+-                                                 error);
+-    }
+-  else
++  /* Already the thread that owns the main context: the hop would deadlock, and it is not
++   * needed. This is the ordinary path for a synchronous read.
++   */
++  if (g_main_context_is_owner (main_context))
++    return gdk_x11_text_list_converter_convert_now (&c);
++
++  g_mutex_init (&c.lock);
++  g_cond_init (&c.cond);
++
++  g_main_context_invoke_full (main_context, G_PRIORITY_DEFAULT,
++                              gdk_x11_text_list_converter_convert_on_main, &c, NULL);
++
++  deadline = g_get_monotonic_time () + GDK_X11_TEXT_LIST_CONVERT_WARN_US;
++  g_mutex_lock (&c.lock);
++  while (!c.done)
+     {
+-      return gdk_x11_text_list_converter_decode (conv,
+-                                                 inbuf, inbuf_size,
+-                                                 outbuf, outbuf_size,
+-                                                 flags,
+-                                                 bytes_read, bytes_written,
+-                                                 error);
++      if (!g_cond_wait_until (&c.cond, &c.lock, deadline))
++        {
++          g_warning ("gdk: text-list conversion not serviced by the main loop after %d "
++                     "seconds; is a GMainLoop running on the default context?",
++                     (int) (GDK_X11_TEXT_LIST_CONVERT_WARN_US / G_USEC_PER_SEC));
++          deadline = G_MAXINT64;
++        }
+     }
++  g_mutex_unlock (&c.lock);
++
++  g_mutex_clear (&c.lock);
++  g_cond_clear (&c.cond);
++
++  return c.result;
+ }
+ 
+ static void

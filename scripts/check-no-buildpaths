@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Assert the shipped binaries carry no path from the machine that built them.
+#
+# GTK's prefix is compiled in as .rodata string constants that `strip` does not touch,
+# so a build-tree prefix ships the builder's home directory in the .deb.
+#
+# Fails on the builder's home, the repo, and staging or meson directories. Upstream's
+# own /home/sam and /home/jimmac are in every GTK build; reported, not failed on.
+#
+#   scripts/check-no-buildpaths build/gtk/stage/usr/lib/amber-gtk4
+#   scripts/check-no-buildpaths build/deb
+set -uo pipefail
+
+TARGET=${1:?usage: check-no-buildpaths <dir-or-file>}
+[ -e "$TARGET" ] || { echo "check-no-buildpaths: no such path: $TARGET" >&2; exit 1; }
+
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+
+is_elf() { [ "$(head -c4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "7f454c46" ]; }
+
+# A path is this build's if it sits under the builder's home or the repo (literal
+# prefixes), or has the shape of a staged prefix, which catches a bundle copied in
+# from a sibling tree even when the home directory does not match.
+STAGE_SHAPES='/_?build/gtk/|/(_build|meson-private|meson-info)/|/prefix(/|$)'
+
+fail=0
+checked=0
+upstream=""
+
+while IFS= read -r f; do
+	is_elf "$f" || continue
+	checked=$((checked + 1))
+
+	paths=$(strings -a "$f" \
+		| grep -aoE '(/home/[A-Za-z0-9_.-]+|/root|/tmp)/[A-Za-z0-9_./+-]*' \
+		| sort -u)
+	[ -n "$paths" ] || continue
+
+	bad=$( { grep -F -e "$HOME/" -e "$REPO/" <<<"$paths"; grep -E "$STAGE_SHAPES" <<<"$paths"; } \
+		| sort -u )
+	if [ -n "$bad" ]; then
+		echo "BUILD PATH — ${f#"$REPO"/} carries paths from this build tree:"
+		sed 's/^/    /' <<<"$bad"
+		fail=1
+	fi
+
+	rest=$(grep -vxF "$bad" <<<"$paths" || true)
+	[ -n "$rest" ] && upstream="$upstream$rest"$'\n'
+done < <(find "$TARGET" -type f 2>/dev/null)
+
+if [ "$checked" -eq 0 ]; then
+	echo "check-no-buildpaths: no ELF objects under $TARGET — nothing was checked" >&2
+	exit 1
+fi
+
+if [ "$fail" -ne 0 ]; then
+	echo "  The bundle must be configured with --prefix=/usr and installed through"
+	echo "  DESTDIR — see the Makefile's gtk target. Do not copy a prefix built under"
+	echo "  another tree into build/."
+	exit 1
+fi
+
+n=$(sort -u <<<"${upstream%$'\n'}" | grep -c . || true)
+echo "no-buildpaths OK — $checked objects, none from this build ($n upstream path(s) left in place)"

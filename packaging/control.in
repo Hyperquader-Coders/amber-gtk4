@@ -1,0 +1,23 @@
+Package: amber-gtk4
+Version: @VERSION@
+Architecture: amd64
+Maintainer: Andre Bremer <hyperquader@gmail.com>
+Installed-Size: @SIZE@
+Depends: @DEPS@
+Section: libs
+Priority: optional
+Homepage: https://github.com/Hyperquader-Coders/amber-gtk4
+Description: GTK4 runtime bundle for the amber suite
+ One GTK4 build shared by the amber applications, installed to
+ /usr/lib/amber-gtk4 and reached only through those applications'
+ RUNPATH. It is deliberately not on the ldconfig path, so installing it
+ cannot change what anything else on the system links against.
+ .
+ It exists because kat800's terminal widget (VTE) needs a newer GTK than
+ Linux Mint ships, and maintaining one build for the suite beats
+ maintaining one per application. The version is held at 4.16 on purpose:
+ 4.18 requires a newer pango and glib than Mint has, and bundling those
+ too is a cascade this package exists to avoid.
+ .
+ This is a runtime bundle, not a development package. Build against the
+ distro's libgtk-4-dev.

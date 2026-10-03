@@ -1,0 +1,6 @@
+amber-gtk4 (4.16.13-1) noble; urgency=medium
+
+  * Initial packaging.
+  * X11 text-list conversion runs on the main thread (patches/0001).
+
+ -- Andre Bremer <hyperquader@gmail.com>  Fri, 14 Aug 2026 14:45:00 +0100
