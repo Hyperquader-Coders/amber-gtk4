@@ -1,0 +1,31 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: gtk
+Source: https://download.gnome.org/sources/gtk/
+
+Files: *
+Copyright: 2010-2026 The GTK Team and contributors
+License: LGPL-2.1+
+Comment: A build of upstream GTK with the downstream patches in patches/ of the
+ amber-gtk4 source package applied; each patch's header says what it changes.
+ Corresponding source for this build: the release tarball
+ https://download.gnome.org/sources/gtk/4.16/gtk-4.16.13.tar.xz plus those patches.
+ The library is shipped as a separate, dynamically linked .so under the private path
+ /usr/lib/amber-gtk4/, so the LGPL's shared-library terms apply.
+
+Files: Makefile scripts/* packaging/* patches/*
+Copyright: 2025 Andre Bremer <hyperquader@gmail.com>, https://hyperquader.com
+License: LGPL-2.1+
+Comment: The packaging (Makefile, scripts, debian metadata, patches) is by Andre Bremer
+ and carries the same licence as the software it packages.
+
+License: LGPL-2.1+
+ This library is free software; you can redistribute it and/or modify it under the
+ terms of the GNU Lesser General Public License as published by the Free Software
+ Foundation; either version 2.1 of the License, or (at your option) any later version.
+ .
+ This library is distributed in the hope that it will be useful, but WITHOUT ANY
+ WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+ PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU Lesser General Public License version
+ 2.1 can be found in /usr/share/common-licenses/LGPL-2.1.

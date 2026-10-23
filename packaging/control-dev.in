@@ -1,0 +1,17 @@
+Package: amber-gtk4-dev
+Version: @VERSION@
+Architecture: amd64
+Maintainer: Andre Bremer <hyperquader@gmail.com>
+Installed-Size: @SIZE@
+Depends: amber-gtk4 (= @VERSION@), libglib2.0-dev, libpango1.0-dev, libcairo2-dev, libgdk-pixbuf-2.0-dev, libgraphene-1.0-dev, libwayland-dev, libx11-dev
+Section: libdevel
+Priority: optional
+Homepage: https://github.com/Hyperquader-Coders/amber-gtk4
+Description: GTK4 development files for the amber suite's bundle
+ The headers, pkg-config files and unversioned library link of the
+ amber-gtk4 bundle, all under /usr/lib/amber-gtk4, so they never meet
+ the distro's libgtk-4-dev. The suite's Odin bindings are generated from
+ these headers.
+ .
+ Build with PKG_CONFIG_PATH set to /usr/lib/amber-gtk4/pkgconfig, and give
+ the program the RUNPATH /usr/lib/amber-gtk4.
