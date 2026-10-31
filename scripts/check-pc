@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Assert the -dev package's .pc files point inside the bundle: libdir is the bundle's
+# directory and includedir its include/ folder, so a program that builds against them
+# compiles with the bundle's headers and links the bundle's library, never Mint's. GTK's
+# companion files (atspi, unix-print, wayland, x11) carry only includedir and require gtk4,
+# whose libdir is the one a program links with.
+#
+#   scripts/check-pc build/deb/amber-gtk4-dev/usr/lib/amber-gtk4/pkgconfig /usr/lib/amber-gtk4
+set -uo pipefail
+
+DIR=${1:?usage: check-pc <pkgconfig-dir> <install-dir>}
+INSTALL_DIR=${2:?usage: check-pc <pkgconfig-dir> <install-dir>}
+
+# pkg-config reads a file's Requires before it answers for a variable, so the companion files'
+# gtk4 is the packaged one, not the distro's or none.
+export PKG_CONFIG_PATH=$DIR
+
+fail=0
+n=0
+for pc in gtk4 gtk4-atspi gtk4-unix-print gtk4-wayland gtk4-x11; do
+	f=$DIR/$pc.pc
+	if [ ! -e "$f" ]; then
+		echo "PC: $pc.pc is missing"
+		fail=1
+		continue
+	fi
+	n=$((n + 1))
+	grep -qx "prefix=/usr" "$f" || {
+		echo "PC: $pc.pc has no bare prefix=/usr line"
+		fail=1
+	}
+	vars=includedir
+	[ "$pc" = gtk4 ] && vars="libdir includedir"
+	for var in $vars; do
+		have=$(pkg-config --define-variable=prefix=/usr --variable="$var" "$f")
+		want=$INSTALL_DIR
+		[ "$var" = includedir ] && want=$INSTALL_DIR/include
+		[ "$have" = "$want" ] || {
+			echo "PC: $pc.pc has $var=$have, not $want"
+			fail=1
+		}
+	done
+done
+
+[ "$fail" -eq 0 ] || exit 1
+echo "pc OK: $n .pc files, libdir $INSTALL_DIR, includedir $INSTALL_DIR/include"

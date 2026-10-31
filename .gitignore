@@ -1,0 +1,14 @@
+/build/
+/dist/
+/out/
+
+# Agent files are local and are not shared.
+.claude/
+.mcp.json
+.codex/
+AGENTS.md
+CLAUDE.md
+
+# Claude config dirs, if a session ever materialises one here.
+.claude-amber/
+.credentials.json

@@ -1,0 +1,48 @@
+# `make ci` is the gate for a push: the bundle resolves against the distro's stock stack,
+# carries no path from the machine that built it, and packages; lintian reads both packages;
+# the shell scripts, the packaging metadata and the agent-file guard check out. Unlike
+# amber-webkit's, it builds: a GTK build is 20 minutes, and the staged bundle is cached.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The job only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # The packages are the Makefile's DEPS list.
+      - name: system packages
+        run: sudo apt-get update && make init-packages APT_FLAGS=-y
+
+      # `make gtk` fetches and builds GTK; the staged result only changes when VERSION or the
+      # patches do, so it is cached against both, and a cache hit skips the GTK build.
+      - name: GTK version
+        id: gtk
+        run: echo "v=$(sed -n 's/^VERSION *= *//p' Makefile)" >> "$GITHUB_OUTPUT"
+
+      - name: cache the bundle
+        id: gtk-cache
+        uses: actions/cache@v4
+        with:
+          path: build/gtk/stage
+          key: gtk-${{ steps.gtk.outputs.v }}-${{ hashFiles('patches/*.patch') }}-${{ runner.os }}
+
+      - name: build GTK
+        if: steps.gtk-cache.outputs.cache-hit != 'true'
+        run: make gtk
+
+      # check runs both assertions once on the staged bundle; deb re-runs check-no-buildpaths
+      # on the packaged trees, so building is not a way around them.
+      - name: make ci
+        run: make ci

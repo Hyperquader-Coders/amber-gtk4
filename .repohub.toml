@@ -1,0 +1,4 @@
+# RepositoryHub checks this repository against its template, packaging and licence
+# (repositoryhub docs/HYGIENE.md).
+packaging = ["deb"]
+license = "LGPL-2.1"
